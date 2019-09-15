@@ -4,6 +4,20 @@ import re
 import sqlite3
 import os
 import math
+student_nric = [
+	"a", "00", "10", "20", "30", "40", "50", "60", "70", "80", "90", "a0",
+	"h", "01", "11", "21", "31", "41", "51", "61", "71", "81", "91", "a1",
+	"i", "02", "12", "22", "32", "42", "52", "62", "72", "82", "92", "a2",
+	"k", "03", "13", "23", "33", "43", "53", "63", "73", "83", "93", "a3",
+	"l", "04", "14", "24", "34", "44", "54", "64", "74", "84", "94", "a4",
+	"p", "05", "15", "25", "35", "45", "55", "65", "75", "85", "95", "a5",
+	"t", "06", "16", "26", "36", "46", "56", "66", "76", "86", "96", "a6",
+	"w", "07", "17", "27", "37", "47", "57", "67", "77", "87", "97", "a7",
+	"5", "08", "18", "28", "38", "48", "58", "68", "78", "88", "98", "a8",
+	"6", "09", "19", "29", "39", "49", "59", "69", "79", "89", "99", "a9",
+	"7",
+	"8"
+]
 label = [
     "1a", "1b", "1c", "1d", "21a", "21b", "21c", "21d", "41a", "41b", "41c", "41d", "61a", "61b", "61c", "61d",
     "2a", "2b", "2c", "2d", "22a", "22b", "22c", "22d", "42a", "42b", "42c", "42d", "62a", "62b", "62c", "62d",
@@ -27,9 +41,11 @@ label = [
     "20a", "20b", "20c", "20d", "40a", "40b", "40c", "40d", "60a", "60b", "60c", "60d", "80a", "80b", "80c", "80d",
 ]
 calibrated = {}
+calibrated_nric = {}
 calibPoint = (99, 240)
 answers = []
 student_ans = []
+student_id = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
 response = []
 def sorted_nicely(l):
     convert = lambda text: int(text) if text.isdigit() else text
@@ -45,9 +61,11 @@ def readAnswerKey(filename):
     sorted = sorted_nicely(student_ans)
     score = set(answers) & set(student_ans)
 
+    reconstructed_nric = str(''.join(student_id) )
+
     db = sqlite3.connect('math.db')
     cursor = db.cursor()
-    query = "INSERT INTO answers(student_id, test_id, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15, q16, q17, q18, q19, q20, q21, q22, q23, q24, q25, q26, q27, q28, q29, q30, q31, q32, q33, q34, q35, q36, q37, q38, q39, q40, score) VALUES (9999, 9999, "
+    query = "INSERT INTO answers(student_id, test_id, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15, q16, q17, q18, q19, q20, q21, q22, q23, q24, q25, q26, q27, q28, q29, q30, q31, q32, q33, q34, q35, q36, q37, q38, q39, q40, score) VALUES ("+reconstructed_nric+", 9999, "
     for x in sorted:
         query += "'" + x + "', "
     query += str(len(score) ) + ");"
@@ -126,13 +144,30 @@ def loadAnswerSheet(filename):
         
     resultPath = "result.png"
     cv2.imwrite(resultPath, raw)
+
+    for k, v in calibrated_nric.items():
+        zeros = np.zeros((v[3], v[2]), np.uint8)
+        cx = v[0] - calibPoint[0] + shift[0] 
+        cy = v[1] - calibPoint[1] + shift[1]
+        cv2.rectangle(image, (cx, cy), (cx+v[2], cy+v[3]), (0, 255, 0), 2 );
+        im = thresh[cy:cy+v[3], cx:cx+v[2] ]
+        mask = cv2.bitwise_and(im, im, zeros)
+        blanks = float(v[3]*v[2])
+        total = float(cv2.countNonZero(mask)/blanks)
+        if total >= darkthreshold:
+            if k[0] == "a":
+		column = 10 + 1
+            else:
+                column = int(k[0]) + 1
+            student_id[column] = k[1]
+        
 def calibration(c):
     coord = (0, 0, 0, 0)
     area = cv2.contourArea(c, True)
     perimeter = cv2.arcLength(c, True)
     vertices = cv2.approxPolyDP(c, 0.01 * perimeter, True)
     x,y,w,h = cv2.boundingRect(c)
-    if len(vertices) > 4 and area<0 and abs(h-18)<2 and (abs(w-25)<2 or abs(w-32)<2 or abs(w-30)<2) and (abs(w/float(h)-1.38)<0.2 or abs(w/float(h)-1.75)<0.2):
+    if len(vertices) > 4 and area<0 and (abs(h-18)<2 or abs(h-22)<2) and (abs(w-28)<2 or abs(w-25)<2 or abs(w-32)<2 or abs(w-30)<2) and (abs(w/float(h)-1.38)<0.2 or abs(w/float(h)-1.75)<0.2 or abs(w/float(h)-1.27)<0.2):
         coord = (x, y, w, h)
     return coord
 
@@ -159,7 +194,12 @@ def imagepro(filename):
     #boxes.sort(key=lambda b: b[1], reverse = True)
     
     l = 0
+    ll = 0
     for x, y, w, h in boxes[::-1]:
+	if y>774 and y <1300 and x>1080: #nric section
+            calibrated_nric[student_nric[ll] ] = (x, y, w, h)
+            cv2.putText(image, student_nric[ll], (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 0, 0), 2)
+            ll+=1
         if y>1300: #answers section
             calibrated[label[l] ] = (x, y, w, h)
             cv2.putText(image, label[l], (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 0, 0), 2)
